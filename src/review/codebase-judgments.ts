@@ -1,173 +1,66 @@
 // Codebase-scan judgments. These ask whether an issue exists in complete
 // source, rather than whether a patch introduced one.
-import { choice, noul, score, TypeSafeClient } from "@typesafe-ai/sdk";
+import { choice, score } from "@typesafe-ai/sdk";
 import { basename, dirname } from "node:path";
+import type { Jev } from "../adapters/jev.ts";
 import {
   BLOCKING_SEVERITY,
-  type Dimension,
-  dimensions,
-  mechanisms,
   MIN_LOCATION_CONFIDENCE,
-  owners,
   reviewPriorityRubric,
   ROUTE_SEVERITY,
   severityRubric,
 } from "../domain/config.ts";
-import type {
-  FileProfile,
-  Finding,
-  Screening,
-  Signal,
-  SourceFile,
-} from "../domain/types.ts";
+import type { ReviewPolicy } from "../domain/policy.ts";
+import type { FileProfile, Finding, Screening, Signal, SourceFile } from "../domain/types.ts";
+import { maxNoulMap, noulMap, screenQuestions } from "./questions.ts";
 
-const client = new TypeSafeClient();
 const REGION_LINES = 80;
 const SCREEN_REGION_LINES = 160;
 const MAX_RELATED_TESTS = 4;
 const MAX_TEST_SNIPPET_CHARS = 1_800;
 
-const fileRoles = {
-  entrypoint: "Application, command, route, or public package entry point",
-  boundary: "Authentication, validation, serialization, or external-system boundary",
-  domain: "Core business rules, state transitions, or domain behavior",
-  persistence: "Database, cache, filesystem, migration, or durable state",
-  infrastructure: "Runtime, scheduling, networking, build, or operational plumbing",
-  utility: "Shared helper, adapter, formatting, or low-level utility",
-};
+function screenOf(policy: ReviewPolicy, key: string) {
+  const screen = policy.screens.find((entry) => entry.key === key);
+  if (!screen) throw new Error("Unknown dimension " + key);
+  return screen;
+}
 
 export async function screenSourceFile(
+  jev: Jev,
+  policy: ReviewPolicy,
   file: SourceFile,
   testFiles: SourceFile[],
 ): Promise<Screening<SourceFile>> {
   const relatedTests = selectRelatedTests(file, testFiles);
-  const results: Array<Record<Dimension, number>> = [];
+  const results: Array<Record<string, number>> = [];
 
   for (const region of sourceRegions(file.content, SCREEN_REGION_LINES)) {
-    const response = await client.systemOne({
+    const response = await jev.systemOne("screen", file.path, {
       state: {
         file: { path: file.path, startLine: region.startLine, content: region.content },
         relatedTests,
+        shard: policy.context,
       },
-      questions: {
-        correctness: noul(
-          {
-            question: "Does file.content directly support that this code contains incorrect runtime behavior?",
-            inspect: "file.content",
-            focus: "Concrete behavior, state, data-flow, or async errors reachable in realistic use",
-            ignore: ["Style preferences", "Naming concerns", "Missing context with no concrete failure path"],
-          },
-          {
-            true: {
-              what: "The source contains a realistic path to a wrong runtime result",
-              examples: ["A condition handles the opposite case", "State is updated under the wrong key"],
-            },
-            false: {
-              what: "The implementation is coherent or no concrete incorrect path is supported",
-              not_for: "Unusual code that is still internally consistent",
-            },
-          },
-        ),
-        security: noul(
-          {
-            question: "Does file.content directly support that this code weakens a security boundary?",
-            inspect: "file.content",
-            focus: "Authorization, injection, secret exposure, trust boundaries, and unsafe defaults",
-          },
-          {
-            true: {
-              what: "The source contains a concrete path around a control or into an unsafe sink",
-              examples: ["A privileged action lacks authorization", "Untrusted input reaches command execution"],
-            },
-            false: {
-              what: "No concrete security weakness is supported by this file",
-              not_for: "Code that merely handles credentials or permissions safely",
-            },
-          },
-        ),
-        reliability: noul(
-          {
-            question: "Does file.content directly support that this code can crash, race, leak, deadlock, or recover poorly?",
-            inspect: "file.content",
-            focus: "Realistic resource, concurrency, cancellation, and failure paths",
-          },
-          {
-            true: {
-              what: "A reachable path can lose work, leak resources, hang, crash, or leave inconsistent state",
-              examples: ["Cleanup is skipped after failure", "Concurrent work mutates shared state unsafely"],
-            },
-            false: { what: "Lifecycle and failure handling appear safe, or no concrete failure path is supported" },
-          },
-        ),
-        compatibility: noul(
-          {
-            question: "Does file.content directly support an internal inconsistency that can break a caller, format, protocol, or documented behavior?",
-            inspect: "file.content",
-            focus: "Contradictions visible in this source, not guesses about unknown historical versions",
-          },
-          {
-            true: {
-              what: "The source contains conflicting contracts or a concrete caller-facing mismatch",
-              examples: ["A parser and serializer disagree on a required field", "An exported type contradicts runtime behavior"],
-            },
-            false: {
-              what: "The visible contracts are internally consistent",
-              not_for: "Speculation that an API may once have behaved differently",
-            },
-          },
-        ),
-        testGap: noul(
-          {
-            question: "Does file.content contain important behavior without adequate targeted evidence in relatedTests?",
-            compare: ["file.content", "relatedTests"],
-            focus: "Critical branches, boundaries, failure paths, and component interactions",
-            caution: "A filename mismatch alone is not enough; identify behavior that specifically needs a test",
-          },
-          {
-            true: {
-              what: "Important behavior is present and the related tests do not exercise it",
-              examples: ["An error-recovery branch has no assertion", "Authorization behavior lacks a denial test"],
-            },
-            false: {
-              what: "Related tests cover the important behavior, or this file has no behavior needing direct tests",
-              examples: ["A focused test covers the boundary", "A declarative constants module"],
-            },
-          },
-        ),
-      },
-  });
-
-    results.push({
-      correctness: response.answers.correctness.noul,
-      security: response.answers.security.noul,
-      reliability: response.answers.reliability.noul,
-      compatibility: response.answers.compatibility.noul,
-      testGap: response.answers.testGap.noul,
+      questions: screenQuestions(policy, "codebase"),
     });
+    results.push(noulMap(policy, response.answers));
   }
 
-  return {
-    file,
-    probabilities: {
-      correctness: Math.max(...results.map((result) => result.correctness)),
-      security: Math.max(...results.map((result) => result.security)),
-      reliability: Math.max(...results.map((result) => result.reliability)),
-      compatibility: Math.max(...results.map((result) => result.compatibility)),
-      testGap: Math.max(...results.map((result) => result.testGap)),
-    },
-  };
+  return { file, probabilities: maxNoulMap(results) };
 }
 
 export async function profileSourceFile(
+  jev: Jev,
+  policy: ReviewPolicy,
   file: SourceFile,
-  screeningProbabilities: Record<Dimension, number>,
+  screeningProbabilities: Record<string, number>,
 ): Promise<FileProfile> {
-  const response = await client.systemOne({
-    state: { file, screeningProbabilities },
+  const response = await jev.systemOne("profile", file.path, {
+    state: { file, screeningProbabilities, shard: policy.context },
     questions: {
       category: choice(
         { question: "Which role best describes this source file?", focus: "Primary runtime responsibility" },
-        fileRoles,
+        policy.fileRoles,
       ),
       reviewPriority: score(
         "Rate how closely a human should review this complete file, considering its role and screeningProbabilities.",
@@ -186,20 +79,24 @@ export async function profileSourceFile(
 }
 
 export async function locateSourceSignal(
+  jev: Jev,
+  policy: ReviewPolicy,
   signal: Signal<SourceFile>,
 ): Promise<Finding<SourceFile> | null> {
   const regions = sourceRegions(signal.file.content);
   if (regions.length === 0) return null;
+  const screen = screenOf(policy, signal.dimension);
 
-  const suspectedConcern = {
-    dimension: signal.dimension,
-    definition: dimensions[signal.dimension],
-  };
-  const location = await client.systemOne({
+  const location = await jev.systemOne("locate", signal.file.path, {
     state: {
       file: signal.file.path,
-      suspectedConcern: { ...suspectedConcern, screeningProbability: signal.probability },
+      suspectedConcern: {
+        dimension: signal.dimension,
+        definition: screen.definition,
+        screeningProbability: signal.probability,
+      },
       candidateRegions: regions,
+      shard: policy.context,
     },
     questions: {
       evidence: choice(
@@ -222,20 +119,30 @@ export async function locateSourceSignal(
   const region = regions.find((candidate) => candidate.id === selected.choice);
   if (!region) return null;
 
-  const classification = await client.systemOne({
-    state: { file: signal.file.path, suspectedConcern, selectedEvidence: region },
+  const classification = await jev.systemOne("classify", signal.file.path, {
+    state: {
+      file: signal.file.path,
+      suspectedConcern: { dimension: signal.dimension, definition: screen.definition },
+      selectedEvidence: region,
+      shard: policy.context,
+    },
     questions: {
       mechanism: choice(
         "Which mechanism best describes the suspected concern supported by selectedEvidence?",
-        mechanisms[signal.dimension],
+        screen.mechanisms,
       ),
     },
   });
   const mechanism = classification.answers.mechanism;
   if (mechanism.choice === "noIssue") return null;
 
-  const impact = await client.systemOne({
-    state: { file: signal.file.path, suspectedConcern, selectedEvidence: region },
+  const impact = await jev.systemOne("severity", signal.file.path, {
+    state: {
+      file: signal.file.path,
+      suspectedConcern: { dimension: signal.dimension, definition: screen.definition },
+      selectedEvidence: region,
+      shard: policy.context,
+    },
     questions: {
       severity: score(
         "Assuming selectedEvidence exhibits suspectedConcern, rate the likely production impact.",
@@ -248,7 +155,7 @@ export async function locateSourceSignal(
   let owner: string | null = null;
   let ownerConfidence: number | null = null;
   if (severity.score >= ROUTE_SEVERITY) {
-    const routing = await client.systemOne({
+    const routing = await jev.systemOne("route", signal.file.path, {
       state: {
         file: signal.file.path,
         concern: {
@@ -257,9 +164,10 @@ export async function locateSourceSignal(
           severity: severity.score,
         },
         selectedEvidence: region,
+        shard: policy.context,
       },
       questions: {
-        owner: choice("Which reviewer is best suited to investigate this concern?", owners),
+        owner: choice("Which reviewer is best suited to investigate this concern?", policy.owners),
       },
     });
     owner = routing.answers.owner.choice;
@@ -290,13 +198,23 @@ function sourceRegions(content: string, linesPerRegion = REGION_LINES) {
   }));
 }
 
+function packagePrefix(path: string): string | null {
+  const match = path.match(/^(packages\/[^/]+|apps\/[^/]+|backend|services\/[^/]+)/);
+  return match ? match[1] : null;
+}
+
 function selectRelatedTests(file: SourceFile, testFiles: SourceFile[]): SourceFile[] {
   const stem = basename(file.path).replace(/\.[^.]+$/, "");
   const directory = dirname(file.path);
+  const member = packagePrefix(file.path);
   return testFiles
     .map((test) => ({
       test,
-      score: (test.path.includes(stem) ? 2 : 0) + (test.path.startsWith(directory) ? 1 : 0),
+      score:
+        (test.path.includes(stem) ? 2 : 0) +
+        (test.path.startsWith(directory) ? 2 : 0) +
+        (member && test.path.startsWith(member) ? 1 : 0) +
+        (file.path.startsWith("backend/") && test.path.startsWith("backend/tests/") ? 2 : 0),
     }))
     .filter(({ score }) => score > 0)
     .sort((a, b) => b.score - a.score || a.test.path.localeCompare(b.test.path))

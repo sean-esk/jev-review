@@ -363,6 +363,50 @@ function severityMeter(severity) {
   );
 }
 
+function usage(report) {
+  const data = report.usage;
+  if (!data) return null;
+  const tokens = data.tokensObserved
+    ? `${data.inputTokens ?? "?"} in / ${data.outputTokens ?? "?"} out`
+    : `${data.inputChars} chars (tokens not reported)`;
+  const rows = Array.isArray(data.byStep) ? data.byStep : [];
+  return section(
+    "Jev usage",
+    h("span", { class: "count" }, String(data.requests ?? 0)),
+    h(
+      "p",
+      { class: "section-note" },
+      "Per-request token counts when the API reports them. " +
+        (data.model ? "Model " + data.model + ". " : "") +
+        tokens +
+        ", " +
+        ((data.durationMs ?? 0) / 1000).toFixed(1) +
+        "s.",
+    ),
+    rows.length > 0 &&
+      h(
+        "table",
+        { class: "findings" },
+        h("thead", {}, h("tr", {}, ["Step", "Requests", "In", "Out", "ms"].map((label) => h("th", { scope: "col" }, label)))),
+        h(
+          "tbody",
+          {},
+          rows.map((row) =>
+            h(
+              "tr",
+              {},
+              h("td", {}, row.step),
+              h("td", {}, String(row.requests)),
+              h("td", {}, row.inputTokens == null ? "–" : String(row.inputTokens)),
+              h("td", {}, row.outputTokens == null ? "–" : String(row.outputTokens)),
+              h("td", {}, String(row.durationMs)),
+            ),
+          ),
+        ),
+      ),
+  );
+}
+
 function findings(report) {
   const list = report.findings;
   const labels = Object.fromEntries(dimensionsFor(report).map(([key, label]) => [key, label]));
@@ -450,8 +494,12 @@ function renderMeta(state) {
   const scope = state.report.scope;
   const name = scope.split("/").filter(Boolean).pop() ?? scope;
   const mode = state.report.mode === "codebase" ? "Codebase scan" : "Change review";
+  const profile = state.report.config?.profile;
+  const packs = Array.isArray(state.report.config?.packs) ? state.report.config.packs.join("+") : null;
   meta.append(
     h("span", { class: "mode", title: mode }, mode),
+    profile && h("span", { class: "sep", "aria-hidden": "true" }, "·"),
+    profile && h("span", { title: "profile " + profile + (packs ? " packs " + packs : "") }, [profile, packs].filter(Boolean).join(" / ")),
     h("span", { class: "sep", "aria-hidden": "true" }, "·"),
     h("span", { class: "scope", title: scope }, name),
     h("span", { class: "sep", "aria-hidden": "true" }, "·"),
@@ -470,6 +518,7 @@ function render(state) {
         ...[
           summary(state.report),
           workflow(state.report),
+          usage(state.report),
           profiles(state.report),
           matrix(state.report),
           findings(state.report),

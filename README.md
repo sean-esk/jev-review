@@ -33,13 +33,13 @@ Requires Node.js 24+, Git, and a [TypeSafe API key](https://console.typesafe.ai/
 ```bash
 npm install
 cp .env.example .env
-# Add TYPESAFE_API_KEY to .env
+# Add TYPESAFE_API_KEY or JEV_API_KEY to .env (JEV_API_KEY from the LM monorepo .env is accepted)
 
-# Review the current Git diff
-npm run review:changes:save -- /path/to/git/repository
+# Review the current Git diff (LM profile uses origin/staging...HEAD when that ref exists)
+npm run review:changes:save -- /path/to/git/repository --base origin/staging
 
-# Or scan every non-ignored source file under a scope
-npm run review:codebase:save -- /path/to/git/repository-or-package
+# Small-folder smoke — never the monorepo root, never a whole package
+npm run review:codebase:save -- /path/to/LM-Apps-Monorepo/packages/auth/src --pack core --limit 2 --files roles.ts,resolve-roles.ts
 npm run dashboard
 ```
 
@@ -49,12 +49,14 @@ Open [http://127.0.0.1:4317](http://127.0.0.1:4317).
 
 | Command | Purpose |
 | --- | --- |
-| `npm run review:changes -- <path>` | Print a current-diff review as JSON |
-| `npm run review:changes:save -- <path>` | Save a current-diff review for the dashboard |
-| `npm run review:codebase -- <path>` | Print a complete codebase scan as JSON |
-| `npm run review:codebase:save -- <path>` | Save a complete codebase scan for the dashboard |
+| `npm run review:changes -- <path> [--base origin/staging]` | Print a merge-base or worktree diff review as JSON |
+| `npm run review:changes:save -- <path>` | Save a change review for the dashboard |
+| `npm run review:codebase -- <path> --pack core --limit 2` | Print a shard/file scan as JSON |
+| `npm run review:codebase:save -- <path> --pack core --limit 2` | Save a shard/file scan for the dashboard |
 | `npm run dashboard` | Start the local dashboard |
 | `npm run check` | Typecheck, verify dependency flow, and syntax-check the dashboard client |
+
+`--profile level-method` is the default on this branch. `--pack` selects `core`, `contracts`, `structure`, and/or `product`. `--files` and `--limit` keep a run to a handful of files. The monorepo root is refused. A workspace member with more than six source files also needs `--limit` / `--files` or `--allow-shard`. Each `systemOne` call logs tokens (or input chars if the API omits usage).
 
 ## Architecture
 

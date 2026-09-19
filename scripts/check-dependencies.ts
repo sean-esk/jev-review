@@ -8,7 +8,14 @@ import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join, relative, resolve, sep } from "node:path";
 
 const SRC = resolve(import.meta.dirname, "..", "src");
-const RANK: Record<string, number> = { domain: 0, adapters: 1, review: 2, cli: 3, dashboard: 3 };
+const RANK: Record<string, number> = {
+  domain: 0,
+  profiles: 1,
+  adapters: 1,
+  review: 2,
+  cli: 3,
+  dashboard: 3,
+};
 const IMPORT = /^\s*(?:import|export)\b[^'"]*?from\s+['"]([^'"]+)['"]/gm;
 
 const layerOf = (file: string) => relative(SRC, file).split(sep)[0];

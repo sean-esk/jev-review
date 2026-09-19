@@ -17,7 +17,10 @@ export const MAX_PROFILES = 5;
 export const CONCURRENCY = 3;
 
 export const SOURCE_FILE = /\.(?:[cm]?[jt]sx?)$/;
-export const TEST_FILE = /(?:^|\/)(?:tests?|__tests__)(?:\/|$)|\.(?:spec|test)\.[cm]?[jt]sx?$/;
+export const SOURCE_FILE_WITH_PYTHON = /\.(?:[cm]?[jt]sx?|py)$/;
+export const GENERATED_PATH =
+  /(?:^|\/)(?:node_modules|dist|build|coverage|\.next|\.turbo|__pycache__|\.venv|venv)(?:\/|$)/;
+export const TEST_FILE = /(?:^|\/)(?:tests?|__tests__)(?:\/|$)|\.(?:spec|test)\.[cm]?[jt]sx?$|(?:^|\/)tests?\/.+\.py$/;
 
 export const dimensions = {
   correctness: "The code likely contains incorrect runtime behavior.",
@@ -100,4 +103,22 @@ export const owners = {
   runtime: "Execution, concurrency, resources, or failure recovery",
   testing: "Coverage strategy, fixtures, or regression testing",
   maintainer: "The owning domain or feature maintainer",
+} as const;
+
+export const fileRoles = {
+  entrypoint: "Application, command, route, or public package entry point",
+  boundary: "Authentication, validation, serialization, or external-system boundary",
+  domain: "Core business rules, state transitions, or domain behavior",
+  persistence: "Database, cache, filesystem, migration, or durable state",
+  infrastructure: "Runtime, scheduling, networking, build, or operational plumbing",
+  utility: "Shared helper, adapter, formatting, or low-level utility",
+} as const;
+
+export const changeTypes = {
+  behavior: "Adds or changes runtime behavior",
+  interface: "Changes an exported API, type, protocol, or data shape",
+  infrastructure: "Changes execution, scheduling, build, or operational plumbing",
+  observability: "Changes events, logging, monitoring, or diagnostics",
+  refactor: "Restructures implementation without intending behavior changes",
+  routine: "A small routine change that fits none of the other categories",
 } as const;
