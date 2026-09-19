@@ -69,8 +69,10 @@ export const authShardContext = {
 export const backendApiContext = {
   shard: "backend/src/api",
   testsLiveIn: "backend/tests — not beside the route file; 0 relatedTests under src/api is expected",
+  testGap:
+    "Do not request_changes for a missing colocated test. Tests live in backend/tests. Comment is the most testGap can do on this shard.",
   knownShape: [
-    "contacts.ts: if (session.role < Roles.Coach) { res.send(Unauthorized) } with no return — handler continues and can res.send success after Unauthorized",
+    "contacts.ts: if (session.role < Roles.Coach) { res.send(Unauthorized) } with no return — classify as condition or asyncControl, never legacyPort; handler continues and can res.send success after Unauthorized",
     "google-sheets.ts / spa-version.ts: same deny then return — contrast, not a defect",
     "undefined < Roles.Coach is false, so a missing numeric role also skips the deny",
   ],

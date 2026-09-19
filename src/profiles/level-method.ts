@@ -11,7 +11,8 @@ const lmCore = coreScreens.map((screen) => {
     case "correctness":
       return withExamples(screen, {
         mechanisms: {
-          legacyPort: "Ported an endpoint or helper but not the page-level join, gate, or return",
+          legacyPort:
+            "Ported an endpoint or helper but not the page-level join or gate. Never a missing return after deny — that is condition or asyncControl",
         },
         changeTrue: [
           "session.role < X without return after Unauthorized",
@@ -23,8 +24,10 @@ const lmCore = coreScreens.map((screen) => {
           "status token ignored so siteAdmin/owner is inherited from roles[]",
           "coach numeric role 20/30/35 not accepted by a string-only hasRole copy",
         ],
-        changeFocus: "Inverted role checks, missing return after deny, wrong join key, encode inventing a number",
-        codebaseFocus: "Inverted role checks, missing return after deny, wrong join key, encode inventing a number",
+        changeFocus:
+          "Inverted role checks, missing return after deny, wrong join key, encode inventing a number. Missing return after Unauthorized is condition or asyncControl, never legacyPort",
+        codebaseFocus:
+          "Inverted role checks, missing return after deny, wrong join key, encode inventing a number. Missing return after Unauthorized is condition or asyncControl, never legacyPort",
       });
     case "security":
       return withExamples(screen, {
@@ -83,16 +86,18 @@ const lmCore = coreScreens.map((screen) => {
           "@lm/auth package.json test is a documented no-op; apps/gym/vitest.config.ts already globs packages/auth/src/**/*.{test,spec}.{ts,tsx}",
           "roles.ts and resolve-roles.ts are covered by roles.test.ts denial cases for 40/45/50/60 and mixed string/number hasRole",
           "session-boot.ts, cookie-boot.ts, and persisted-session.ts are covered by their sibling *.test.ts plus gym auth-provider wiring",
+          "backend/src/api has 0 sibling tests; tests live in backend/tests, so empty relatedTests here is expected",
         ],
         codebaseNotFor:
-          "Documented package test no-op when an app Vitest glob already runs the in-package suite",
+          "Documented package test no-op when an app Vitest glob already runs the in-package suite; empty relatedTests under backend/src/api when tests live in backend/tests",
         codebaseIgnore: [
           "Documented @lm/auth package.json test no-op — apps/gym/vitest.config.ts already globs this tree",
           "sibling packages/auth/src/*.test.ts (session-boot, cookie-boot, persisted-session, roles) and gym auth-provider tests",
+          "0 colocated *.test.ts beside a backend/src/api route — tests live in backend/tests",
         ],
         changeFocus: "Silent suites and missing denial tests, not filename mismatch alone",
         codebaseFocus:
-          "Silent suites and missing denial tests, not filename mismatch alone. A documented @lm/auth no-op test script is not a gap when relatedTests already include the matching in-package *.test.ts and the gym glob.",
+          "Silent suites and missing denial tests, not filename mismatch alone. A documented @lm/auth no-op test script is not a gap when relatedTests already include the matching in-package *.test.ts and the gym glob. Empty relatedTests under backend/src/api is expected (tests live in backend/tests) and is not a request_changes gap.",
       });
     default:
       return screen;

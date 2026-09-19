@@ -2,12 +2,12 @@
 import { choice, score } from "@typesafe-ai/sdk";
 import type { Jev } from "../adapters/jev.ts";
 import {
-  BLOCKING_SEVERITY,
   MIN_LOCATION_CONFIDENCE,
   reviewPriorityRubric,
   ROUTE_SEVERITY,
   severityRubric,
 } from "../domain/config.ts";
+import { reviewAction } from "../domain/finding-rules.ts";
 import { parseHunks } from "../domain/patch.ts";
 import type { ReviewPolicy } from "../domain/policy.ts";
 import type { ChangedFile, FileProfile, Finding, Screening, Signal } from "../domain/types.ts";
@@ -167,6 +167,6 @@ export async function locateSignal(
     severityConfidence: severity.confidence,
     owner,
     ownerConfidence,
-    action: severity.score >= BLOCKING_SEVERITY ? "request_changes" : "comment",
+    action: reviewAction(signal.dimension, severity.score, policy.context),
   };
 }

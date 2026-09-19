@@ -4,12 +4,12 @@ import { choice, score } from "@typesafe-ai/sdk";
 import { basename, dirname } from "node:path";
 import type { Jev } from "../adapters/jev.ts";
 import {
-  BLOCKING_SEVERITY,
   MIN_LOCATION_CONFIDENCE,
   reviewPriorityRubric,
   ROUTE_SEVERITY,
   severityRubric,
 } from "../domain/config.ts";
+import { remapCorrectnessMechanism, reviewAction } from "../domain/finding-rules.ts";
 import type { ReviewPolicy } from "../domain/policy.ts";
 import type { FileProfile, Finding, Screening, Signal, SourceFile } from "../domain/types.ts";
 import { maxNoulMap, noulMap, screenQuestions } from "./questions.ts";
@@ -124,19 +124,35 @@ export async function locateSourceSignal(
   const classification = await jev.systemOne("classify", signal.file.path, {
     state: {
       file: signal.file.path,
-      suspectedConcern: { dimension: signal.dimension, definition: screen.definition },
+      suspectedConcern: {
+        dimension: signal.dimension,
+        definition: screen.definition,
+        focus: screen.codebase.instructions.focus,
+        examples: screen.codebase.criteria.true.examples ?? [],
+        not_for: screen.codebase.criteria.false.not_for ?? null,
+      },
       selectedEvidence: region,
       shard: policy.context,
     },
     questions: {
       mechanism: choice(
-        "Which mechanism best describes the suspected concern supported by selectedEvidence?",
+        {
+          question: "Which mechanism best describes the suspected concern supported by selectedEvidence?",
+          focus:
+            signal.dimension === "correctness"
+              ? "Missing return after Unauthorized/deny is condition or asyncControl, never legacyPort"
+              : screen.codebase.instructions.focus,
+        },
         screen.mechanisms,
       ),
     },
   });
   const mechanism = classification.answers.mechanism;
   if (mechanism.choice === "noIssue") return null;
+  const mechanismChoice =
+    signal.dimension === "correctness"
+      ? remapCorrectnessMechanism(mechanism.choice, region.content)
+      : mechanism.choice;
 
   const impact = await jev.systemOne("severity", signal.file.path, {
     state: {
@@ -162,7 +178,7 @@ export async function locateSourceSignal(
         file: signal.file.path,
         concern: {
           dimension: signal.dimension,
-          mechanism: mechanism.choice,
+          mechanism: mechanismChoice,
           severity: severity.score,
         },
         selectedEvidence: region,
@@ -180,13 +196,13 @@ export async function locateSourceSignal(
     ...signal,
     line: region.startLine,
     locationConfidence: selected.confidence,
-    mechanism: mechanism.choice,
+    mechanism: mechanismChoice,
     mechanismConfidence: mechanism.confidence,
     severity: severity.score,
     severityConfidence: severity.confidence,
     owner,
     ownerConfidence,
-    action: severity.score >= BLOCKING_SEVERITY ? "request_changes" : "comment",
+    action: reviewAction(signal.dimension, severity.score, policy.context),
   };
 }
 
