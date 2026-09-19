@@ -93,6 +93,9 @@ export async function locateSourceSignal(
       suspectedConcern: {
         dimension: signal.dimension,
         definition: screen.definition,
+        focus: screen.codebase.instructions.focus,
+        examples: screen.codebase.criteria.true.examples ?? [],
+        not_for: screen.codebase.criteria.false.not_for ?? null,
         screeningProbability: signal.probability,
       },
       candidateRegions: regions,
@@ -101,13 +104,12 @@ export async function locateSourceSignal(
     questions: {
       evidence: choice(
         {
-          question: "Which candidate region provides the strongest direct evidence for suspectedConcern?",
+          question:
+            "Which candidate region provides the strongest direct evidence for suspectedConcern (use focus and examples)?",
           fallback: "Select noMatch when no region provides sufficient evidence",
         },
         {
-          ...Object.fromEntries(
-            regions.map((region) => [region.id, "Source beginning at line " + region.startLine]),
-          ),
+          ...Object.fromEntries(regions.map((region) => [region.id, regionLabel(region)])),
           noMatch: "No source region directly supports the suspected concern",
         },
       ),
@@ -186,6 +188,17 @@ export async function locateSourceSignal(
     ownerConfidence,
     action: severity.score >= BLOCKING_SEVERITY ? "request_changes" : "comment",
   };
+}
+
+function regionLabel(region: { startLine: number; content: string }): string {
+  const preview =
+    region.content
+      .split("\n")
+      .map((line) => line.trim())
+      .find((line) => line.length > 0 && !line.startsWith("//") && !line.startsWith("*") && !line.startsWith("/*")) ??
+    "";
+  const clipped = preview.length > 90 ? preview.slice(0, 87) + "..." : preview;
+  return "Line " + region.startLine + (clipped ? ": " + clipped : "");
 }
 
 function sourceRegions(content: string, linesPerRegion = REGION_LINES) {

@@ -66,9 +66,20 @@ export const authShardContext = {
   ],
 };
 
-export function contextForScope(scope: string): typeof authShardContext | null {
+export const backendApiContext = {
+  shard: "backend/src/api",
+  testsLiveIn: "backend/tests — not beside the route file; 0 relatedTests under src/api is expected",
+  knownShape: [
+    "contacts.ts: if (session.role < Roles.Coach) { res.send(Unauthorized) } with no return — handler continues and can res.send success after Unauthorized",
+    "google-sheets.ts / spa-version.ts: same deny then return — contrast, not a defect",
+    "undefined < Roles.Coach is false, so a missing numeric role also skips the deny",
+  ],
+};
+
+export function contextForScope(scope: string): typeof authShardContext | typeof backendApiContext | null {
   const path = scope.replace(/\\/g, "/");
   if (/packages\/auth(?:\/|$)/.test(path)) return authShardContext;
+  if (/backend(?:\/|$)/.test(path)) return backendApiContext;
   return null;
 }
 
