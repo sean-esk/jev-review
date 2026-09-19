@@ -222,8 +222,14 @@ export function withExamples(
     mechanisms?: Record<string, string>;
     changeTrue?: string[];
     codebaseTrue?: string[];
+    changeFalse?: string[];
+    codebaseFalse?: string[];
+    changeNotFor?: string;
+    codebaseNotFor?: string;
     changeFocus?: string;
     codebaseFocus?: string;
+    changeIgnore?: string[];
+    codebaseIgnore?: string[];
   },
 ): DimensionScreen {
   return {
@@ -236,12 +242,18 @@ export function withExamples(
         focus: extras.changeFocus
           ? screen.change.instructions.focus + ". " + extras.changeFocus
           : screen.change.instructions.focus,
+        ignore: [...(screen.change.instructions.ignore ?? []), ...(extras.changeIgnore ?? [])],
       },
       criteria: {
         ...screen.change.criteria,
         true: {
           ...screen.change.criteria.true,
           examples: [...(screen.change.criteria.true.examples ?? []), ...(extras.changeTrue ?? [])],
+        },
+        false: {
+          ...screen.change.criteria.false,
+          examples: [...(screen.change.criteria.false.examples ?? []), ...(extras.changeFalse ?? [])],
+          not_for: extras.changeNotFor ?? screen.change.criteria.false.not_for,
         },
       },
     },
@@ -252,12 +264,18 @@ export function withExamples(
         focus: extras.codebaseFocus
           ? screen.codebase.instructions.focus + ". " + extras.codebaseFocus
           : screen.codebase.instructions.focus,
+        ignore: [...(screen.codebase.instructions.ignore ?? []), ...(extras.codebaseIgnore ?? [])],
       },
       criteria: {
         ...screen.codebase.criteria,
         true: {
           ...screen.codebase.criteria.true,
           examples: [...(screen.codebase.criteria.true.examples ?? []), ...(extras.codebaseTrue ?? [])],
+        },
+        false: {
+          ...screen.codebase.criteria.false,
+          examples: [...(screen.codebase.criteria.false.examples ?? []), ...(extras.codebaseFalse ?? [])],
+          not_for: extras.codebaseNotFor ?? screen.codebase.criteria.false.not_for,
         },
       },
     },

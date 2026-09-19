@@ -203,6 +203,17 @@ function packagePrefix(path: string): string | null {
   return match ? match[1] : null;
 }
 
+function compactStem(value: string): string {
+  return value.toLowerCase().replace(/[-_]/g, "");
+}
+
+function stemsRelated(sourceStem: string, testPath: string): boolean {
+  const source = compactStem(sourceStem);
+  const testName = compactStem(basename(testPath).replace(/\.(?:spec|test)\.[^.]+$/, ""));
+  if (!source || !testName) return false;
+  return source.includes(testName) || testName.includes(source);
+}
+
 function selectRelatedTests(file: SourceFile, testFiles: SourceFile[]): SourceFile[] {
   const stem = basename(file.path).replace(/\.[^.]+$/, "");
   const directory = dirname(file.path);
@@ -211,7 +222,7 @@ function selectRelatedTests(file: SourceFile, testFiles: SourceFile[]): SourceFi
     .map((test) => ({
       test,
       score:
-        (test.path.includes(stem) ? 2 : 0) +
+        (test.path.includes(stem) || stemsRelated(stem, test.path) ? 2 : 0) +
         (test.path.startsWith(directory) ? 2 : 0) +
         (member && test.path.startsWith(member) ? 1 : 0) +
         (file.path.startsWith("backend/") && test.path.startsWith("backend/tests/") ? 2 : 0),
@@ -231,6 +242,7 @@ function compactTest(test: SourceFile, sourceStem: string): SourceFile {
     const line = lines[index].toLowerCase();
     if (
       line.includes(stem) ||
+      compactStem(line).includes(compactStem(stem)) ||
       line.includes("describe(") ||
       line.includes("describe.") ||
       line.includes("test(") ||
