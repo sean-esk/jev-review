@@ -82,16 +82,17 @@ const lmCore = coreScreens.map((screen) => {
         codebaseFalse: [
           "@lm/auth package.json test is a documented no-op; apps/gym/vitest.config.ts already globs packages/auth/src/**/*.{test,spec}.{ts,tsx}",
           "roles.ts and resolve-roles.ts are covered by roles.test.ts denial cases for 40/45/50/60 and mixed string/number hasRole",
+          "session-boot.ts, cookie-boot.ts, and persisted-session.ts are covered by their sibling *.test.ts plus gym auth-provider wiring",
         ],
         codebaseNotFor:
           "Documented package test no-op when an app Vitest glob already runs the in-package suite",
         codebaseIgnore: [
           "Documented @lm/auth package.json test no-op — apps/gym/vitest.config.ts already globs this tree",
-          "roles.test.ts covering resolveRoles / hasRole / isSiteAdminOwner 40/45/50/60",
+          "sibling packages/auth/src/*.test.ts (session-boot, cookie-boot, persisted-session, roles) and gym auth-provider tests",
         ],
         changeFocus: "Silent suites and missing denial tests, not filename mismatch alone",
         codebaseFocus:
-          "Silent suites and missing denial tests, not filename mismatch alone. A documented @lm/auth no-op test script is not a gap when relatedTests already include roles.test.ts and the gym glob.",
+          "Silent suites and missing denial tests, not filename mismatch alone. A documented @lm/auth no-op test script is not a gap when relatedTests already include the matching in-package *.test.ts and the gym glob.",
       });
     default:
       return screen;
