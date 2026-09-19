@@ -43,7 +43,7 @@ npm run review:codebase:save -- /path/to/LM-Apps-Monorepo/packages/auth/src --pa
 npm run dashboard
 ```
 
-Open [http://127.0.0.1:4317](http://127.0.0.1:4317). Jev only scores. **Write reviews** sends each finding plus its source region to a local OpenAI-compatible model (`WRITE_BASE_URL`, default `http://127.0.0.1:11434/v1` for Ollama). Write-ups land in `reviews/writeups.json`.
+Open [http://127.0.0.1:4317](http://127.0.0.1:4317). The dashboard can launch a folder scan (path + recents + Browse), run Jev, then send each finding to a local OpenAI-compatible model (`WRITE_BASE_URL`, default `http://127.0.0.1:11434/v1` for Ollama). Jev only scores; the local model writes the note. Every run — scores, token counts, and estimated Jev cost — is stored in `reviews/runs.sqlite` so a later pass on the same files can show whether the scores improved. The latest report is still mirrored to `reviews/latest.json`. The monorepo root and unbounded shards are still refused unless you name files, set a limit, or check **Allow a full folder scan**.
 
 ## Commands
 
@@ -54,9 +54,9 @@ Open [http://127.0.0.1:4317](http://127.0.0.1:4317). Jev only scores. **Write re
 | `npm run review:codebase -- <path> --pack core --limit 2` | Print a shard/file scan as JSON |
 | `npm run review:codebase:save -- <path> --pack core --limit 2` | Save a shard/file scan for the dashboard |
 | `npm run dashboard` | Start the local dashboard |
-| `npm run check` | Typecheck, verify dependency flow, and syntax-check the dashboard client |
+| `npm run check` | Typecheck, verify dependency flow, smoke the SQLite store, and syntax-check the dashboard client |
 
-`--profile level-method` is the default on this branch. `--pack` selects `core`, `contracts`, `structure`, and/or `product`. `--files` and `--limit` keep a run to a handful of files. The monorepo root is refused. A workspace member with more than six source files also needs `--limit` / `--files` or `--allow-shard`. Each `systemOne` call logs tokens (or input chars if the API omits usage).
+`--profile level-method` is the default on this branch. `--pack` selects `core`, `contracts`, `structure`, and/or `product`. `--files` and `--limit` keep a run to a handful of files. The monorepo root is refused. A workspace member with more than six source files also needs `--limit` / `--files` or `--allow-shard`. Each `systemOne` call logs tokens (or input chars if the API omits usage) and an estimated Jev cost. CLI saves write the same SQLite history the dashboard uses.
 
 ## Architecture
 
@@ -67,9 +67,11 @@ src/
   domain/      config.ts, types.ts, patch.ts   shared policy, report shapes, diff parsing
   adapters/    git.ts, repository-files.ts     change and complete-source discovery
                report-store.ts                 atomic report save/load
+               run-store.ts                    SQLite run history, tokens, Jev cost
                writeup-store.ts, openai-writer.ts
                                                local OpenAI-compatible write-ups
-  review/      changes.ts, codebase.ts          mode-specific workflows
+  review/      changes.ts, codebase.ts, launch.ts
+                                               mode-specific workflows and dashboard launch
                *-judgments.ts, workflow.ts     Jev calls and shared staged orchestration
   cli/         review-*.ts, save-*.ts           explicit mode entry points
   dashboard/   server.ts, public/              local-only HTTP server and the plain client

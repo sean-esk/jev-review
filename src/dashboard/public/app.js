@@ -26,6 +26,23 @@ let writeups = [];
 let writer = { baseUrl: "", model: "", hasKey: false };
 let writeBusy = false;
 let writeError = "";
+let launchMounted = false;
+let browseOpen = false;
+let browseState = null;
+let launchError = "";
+let viewingRunId = "";
+let pollTimer = 0;
+let history = {
+  runs: [],
+  recents: [],
+  totals: { runs: 0, inputTokens: 0, estimatedUsd: null },
+  pricing: { inputUsdPerMtok: 0.042, outputUsdPerMtok: 0, label: "" },
+  workspace: "",
+  currentRunId: null,
+  hasKey: false,
+  active: null,
+};
+const launchRoot = document.getElementById("launch");
 
 function findingKey(finding) {
   return [finding.file, finding.line, finding.dimension, finding.mechanism].join("\t");
@@ -57,6 +74,27 @@ function h(tag, props = {}, ...children) {
 const isNum = (value) => typeof value === "number" && Number.isFinite(value);
 const fixed = (value, digits = 2) => (isNum(value) ? value.toFixed(digits) : "–");
 
+function formatUsd(value) {
+  if (!isNum(value)) return "–";
+  if (value === 0) return "$0";
+  if (value < 0.000001) return "<$0.000001";
+  if (value < 0.01) return "$" + value.toFixed(6).replace(/0+$/, "").replace(/\.$/, "");
+  return "$" + value.toFixed(4);
+}
+
+function jevCost(usage) {
+  if (!usage?.tokensObserved) return null;
+  const inputRate = history.pricing?.inputUsdPerMtok ?? 0.042;
+  const outputRate = history.pricing?.outputUsdPerMtok ?? 0;
+  return ((usage.inputTokens ?? 0) / 1e6) * inputRate + ((usage.outputTokens ?? 0) / 1e6) * outputRate;
+}
+
+function deltaText(value, word) {
+  if (!isNum(value)) return "";
+  if (value === 0) return "same " + word;
+  return (value > 0 ? "+" : "−") + Math.abs(value) + " " + word;
+}
+
 function ago(iso) {
   const seconds = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
   if (seconds < 60) return "just now";
@@ -86,7 +124,7 @@ function fill(p) {
 }
 
 function section(label, aside, ...content) {
-  const expanded = label === "Review funnel" || label === "Findings";
+  const expanded = label === "Review funnel" || label === "Findings" || label === "Run history";
   return h(
     "details",
     { class: "block", open: expanded },
@@ -394,7 +432,11 @@ function usage(report) {
         tokens +
         ", " +
         ((data.durationMs ?? 0) / 1000).toFixed(1) +
-        "s.",
+        "s. Estimated Jev cost " +
+        formatUsd(jevCost(data)) +
+        " at " +
+        formatUsd(history.pricing?.inputUsdPerMtok ?? 0.042) +
+        " per 1M input tokens; output is free.",
     ),
     rows.length > 0 &&
       h(
@@ -437,7 +479,7 @@ async function writeReviews() {
     const res = await fetch("/api/writeups", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: "{}",
+      body: JSON.stringify({ runId: viewingRunId || lastState?.runId || undefined }),
     });
     const body = await res.json().catch(() => ({}));
     if (Array.isArray(body.writeups)) writeups = body.writeups;
@@ -577,6 +619,409 @@ function findings(report) {
   );
 }
 
+function launchFields() {
+  return {
+    scope: document.getElementById("launch-scope"),
+    pack: document.getElementById("launch-pack"),
+    limit: document.getElementById("launch-limit"),
+    files: document.getElementById("launch-files"),
+    write: document.getElementById("launch-write"),
+    shard: document.getElementById("launch-shard"),
+    run: document.getElementById("launch-run"),
+    meta: document.getElementById("launch-meta"),
+    error: document.getElementById("launch-error"),
+    log: document.getElementById("launch-log"),
+    recents: document.getElementById("launch-recents"),
+    browse: document.getElementById("launch-browse"),
+  };
+}
+
+function readLaunch() {
+  const fields = launchFields();
+  return {
+    scope: fields.scope?.value.trim() ?? "",
+    pack: fields.pack?.value ?? "core",
+    limit: fields.limit?.value ? Number(fields.limit.value) : undefined,
+    files: fields.files?.value.trim() ?? "",
+    write: Boolean(fields.write?.checked),
+    allowShard: Boolean(fields.shard?.checked),
+  };
+}
+
+function persistLaunch() {
+  try {
+    localStorage.setItem("jev-launch", JSON.stringify(readLaunch()));
+  } catch {
+    // Ignore quota / private-mode failures.
+  }
+}
+
+function restoreLaunch() {
+  const fields = launchFields();
+  if (!fields.scope) return;
+  let saved = null;
+  try {
+    saved = JSON.parse(localStorage.getItem("jev-launch") || "null");
+  } catch {
+    saved = null;
+  }
+  if (saved && typeof saved === "object") {
+    if (saved.scope) fields.scope.value = saved.scope;
+    if (saved.pack) fields.pack.value = saved.pack;
+    if (saved.limit) fields.limit.value = String(saved.limit);
+    if (saved.files) fields.files.value = saved.files;
+    fields.write.checked = saved.write !== false;
+    fields.shard.checked = Boolean(saved.allowShard);
+  }
+  if (!fields.scope.value) {
+    fields.scope.value = history.recents[0] || history.workspace || "";
+  }
+}
+
+async function toggleBrowse() {
+  browseOpen = !browseOpen;
+  if (browseOpen) {
+    const path = launchFields().scope?.value.trim() || history.workspace;
+    await loadBrowse(path);
+  }
+  refreshLaunch();
+}
+
+async function loadBrowse(path) {
+  try {
+    const res = await fetch("/api/browse?path=" + encodeURIComponent(path || history.workspace || ""), {
+      cache: "no-store",
+    });
+    browseState = res.ok ? await res.json() : { error: "Could not list that folder" };
+  } catch {
+    browseState = { error: "Could not list that folder" };
+  }
+  refreshLaunch();
+}
+
+function useBrowsePath(path, file) {
+  const fields = launchFields();
+  if (!fields.scope) return;
+  fields.scope.value = path;
+  if (file && fields.files && !fields.files.value.split(",").map((part) => part.trim()).includes(file)) {
+    fields.files.value = fields.files.value ? fields.files.value + ", " + file : file;
+  }
+  persistLaunch();
+  refreshLaunch();
+}
+
+async function startRun() {
+  persistLaunch();
+  launchError = "";
+  const body = readLaunch();
+  refreshLaunch();
+  try {
+    const res = await fetch("/api/runs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        scope: body.scope,
+        pack: body.pack,
+        limit: body.allowShard ? body.limit : body.limit || 2,
+        files: body.files,
+        write: body.write,
+        allowShard: body.allowShard,
+      }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (Array.isArray(data.runs)) history = { ...history, ...data };
+    if (!res.ok) launchError = data.error || "Review failed to start";
+    else viewingRunId = "";
+  } catch {
+    launchError = "Dashboard could not start the review";
+  }
+  load();
+}
+
+function renderBrowse() {
+  const root = launchFields().browse;
+  if (!root) return;
+  root.hidden = !browseOpen;
+  if (!browseOpen) return;
+  if (!browseState || browseState.error) {
+    root.replaceChildren(h("p", { class: "write-error" }, browseState?.error || "Choose a folder"));
+    return;
+  }
+  root.replaceChildren(
+    h(
+      "div",
+      { class: "browse-head" },
+      h("code", { class: "browse-path", title: browseState.path }, browseState.path),
+      h(
+        "button",
+        {
+          type: "button",
+          class: "ghost-btn",
+          onclick: () => useBrowsePath(browseState.path),
+        },
+        "Use this folder",
+      ),
+    ),
+    h(
+      "ul",
+      { class: "browse-list" },
+      browseState.parent &&
+        h(
+          "li",
+          {},
+          h(
+            "button",
+            { type: "button", class: "browse-link", onclick: () => loadBrowse(browseState.parent) },
+            "..",
+          ),
+        ),
+      (browseState.entries || []).map((entry) =>
+        h(
+          "li",
+          {},
+          h(
+            "button",
+            {
+              type: "button",
+              class: "browse-link",
+              onclick: () => {
+                if (entry.kind === "dir") return loadBrowse(entry.path);
+                const cut = entry.path.lastIndexOf("/");
+                useBrowsePath(entry.path.slice(0, cut), entry.name);
+              },
+            },
+            entry.kind === "dir" ? entry.name + "/" : entry.name,
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
+function refreshLaunch() {
+  const fields = launchFields();
+  if (!fields.run) return;
+  const busy = Boolean(history.active);
+  fields.run.disabled = busy;
+  fields.run.textContent = busy
+    ? history.active.status === "writing"
+      ? "Writing reviews…"
+      : "Running Jev…"
+    : "Run Jev review";
+  const writer = writerHost();
+  fields.meta.textContent = history.hasKey
+    ? (writer ? "Local write-up at " + writer : "Set WRITE_BASE_URL") +
+      " · " +
+      formatUsd(history.pricing?.inputUsdPerMtok) +
+      " / 1M Jev input tokens"
+    : "Set JEV_API_KEY in this fork's .env";
+  fields.error.textContent = launchError;
+  const logs = history.active?.logs ?? [];
+  fields.log.hidden = logs.length === 0;
+  fields.log.textContent = logs.slice(-12).join("\n");
+  fields.recents.replaceChildren(
+    ...(history.recents || []).map((path) =>
+      h(
+        "button",
+        {
+          type: "button",
+          class: "recent",
+          title: path,
+          onclick: () => {
+            fields.scope.value = path;
+            persistLaunch();
+          },
+        },
+        path.split("/").filter(Boolean).pop() || path,
+      ),
+    ),
+  );
+  renderBrowse();
+}
+
+function mountLaunch() {
+  if (!launchRoot) return;
+  if (launchMounted) {
+    refreshLaunch();
+    return;
+  }
+  launchRoot.replaceChildren(
+    h(
+      "div",
+      { class: "launch" },
+      h("h2", { class: "launch-title" }, "New review"),
+      h(
+        "p",
+        { class: "section-note" },
+        "Pick a folder, keep the file cap small, then run Jev. After the scores land, the local model can write the review notes. Every run is stored in a local SQLite database so a later pass on the same files can show whether the scores improved.",
+      ),
+      h(
+        "label",
+        { class: "field" },
+        h("span", {}, "Folder"),
+        h(
+          "div",
+          { class: "field-row" },
+          h("input", {
+            id: "launch-scope",
+            type: "text",
+            spellcheck: "false",
+            autocomplete: "off",
+            placeholder: "/path/to/folder",
+            onchange: persistLaunch,
+          }),
+          h("button", { type: "button", class: "ghost-btn", onclick: toggleBrowse }, "Browse"),
+        ),
+      ),
+      h("div", { id: "launch-recents", class: "recents" }),
+      h("div", { id: "launch-browse", class: "browse", hidden: true }),
+      h(
+        "div",
+        { class: "field-grid" },
+        h(
+          "label",
+          { class: "field" },
+          h("span", {}, "Pack"),
+          h(
+            "select",
+            { id: "launch-pack", onchange: persistLaunch },
+            h("option", { value: "core", selected: true }, "core"),
+            h("option", { value: "contracts" }, "contracts"),
+            h("option", { value: "structure" }, "structure"),
+            h("option", { value: "product" }, "product"),
+          ),
+        ),
+        h(
+          "label",
+          { class: "field" },
+          h("span", {}, "Limit"),
+          h("input", { id: "launch-limit", type: "number", min: "1", value: "2", onchange: persistLaunch }),
+        ),
+        h(
+          "label",
+          { class: "field wide" },
+          h("span", {}, "Files"),
+          h("input", {
+            id: "launch-files",
+            type: "text",
+            spellcheck: "false",
+            autocomplete: "off",
+            placeholder: "contacts.ts, google-sheets.ts",
+            onchange: persistLaunch,
+          }),
+        ),
+      ),
+      h(
+        "div",
+        { class: "launch-opts" },
+        h(
+          "label",
+          { class: "check" },
+          h("input", { id: "launch-write", type: "checkbox", checked: true, onchange: persistLaunch }),
+          "Write reviews with the local model after Jev",
+        ),
+        h(
+          "label",
+          { class: "check" },
+          h("input", { id: "launch-shard", type: "checkbox", onchange: persistLaunch }),
+          "Allow a full folder scan",
+        ),
+      ),
+      h(
+        "div",
+        { class: "write-bar" },
+        h("button", { id: "launch-run", class: "write-btn", type: "button", onclick: startRun }, "Run Jev review"),
+        h("span", { id: "launch-meta", class: "write-meta" }),
+        h("span", { id: "launch-error", class: "write-error" }),
+      ),
+      h("pre", { id: "launch-log", class: "launch-log", hidden: true }),
+    ),
+  );
+  launchMounted = true;
+  restoreLaunch();
+  refreshLaunch();
+}
+
+function historyPanel() {
+  const runs = history.runs ?? [];
+  if (runs.length === 0 && !history.totals?.runs) return null;
+  const rows = runs.map((run) => {
+    const name = run.scope.split("/").filter(Boolean).pop() || run.scope;
+    const files = (run.files || []).map((file) => file.split("/").pop()).join(", ");
+    const compare = run.compare
+      ? [deltaText(run.compare.findingsDelta, "findings"), deltaText(run.compare.requestChangesDelta, "request changes")]
+          .filter(Boolean)
+          .join(" · ")
+      : "first pass";
+    const selected = (viewingRunId || history.currentRunId) === run.id;
+    return h(
+      "tr",
+      {
+        class: selected ? "history-row selected" : "history-row",
+        onclick: () => {
+          viewingRunId = run.id;
+          load();
+        },
+      },
+      h(
+        "td",
+        { class: "history-scope", title: run.scope },
+        h("strong", {}, name),
+        files && h("small", {}, files),
+      ),
+      h("td", {}, ago(run.createdAt)),
+      h("td", {}, isNum(run.findings) ? String(run.findings) : run.status),
+      h("td", {}, formatUsd(run.estimatedUsd)),
+      h("td", { class: run.compare && run.compare.findingsDelta < 0 ? "improved" : "" }, compare),
+    );
+  });
+
+  return section(
+    "Run history",
+    h("span", { class: "count" }, formatUsd(history.totals?.estimatedUsd) + " Jev · " + (history.totals?.runs ?? 0)),
+    h(
+      "p",
+      { class: "section-note" },
+      "SQLite keeps every scan, its Jev token counts, and the estimated cost. A later run of the same folder and files shows how findings moved after you change the code. Negative deltas are an improvement.",
+    ),
+    h(
+      "div",
+      { class: "profiles-wrap" },
+      h(
+        "table",
+        { class: "history" },
+        h(
+          "thead",
+          {},
+          h("tr", {}, ["Scope", "When", "Findings", "Jev cost", "Vs previous"].map((label) => h("th", { scope: "col" }, label))),
+        ),
+        h("tbody", {}, rows),
+      ),
+    ),
+  );
+}
+
+function viewingBanner(state) {
+  if (!state?.historical) return null;
+  return h(
+    "div",
+    { class: "banner" },
+    "Showing an earlier run. Scores here stay put so you can compare them after a later pass.",
+    h(
+      "button",
+      {
+        type: "button",
+        class: "ghost-btn",
+        onclick: () => {
+          viewingRunId = history.currentRunId || "";
+          load();
+        },
+      },
+      "Show latest",
+    ),
+  );
+}
+
 function renderMeta(state) {
   meta.replaceChildren();
   if (state?.status !== "ok") return;
@@ -598,12 +1043,15 @@ function renderMeta(state) {
 
 function render(state) {
   lastState = state;
+  mountLaunch();
   renderMeta(state);
   document.body.dataset.status = state?.status ?? "offline";
+  const chrome = [viewingBanner(state), historyPanel()].filter(Boolean);
 
   switch (state?.status) {
     case "ok":
       app.replaceChildren(
+        ...chrome,
         ...[
           summary(state.report),
           workflow(state.report),
@@ -615,41 +1063,74 @@ function render(state) {
       );
       break;
     case "empty":
-      app.replaceChildren(quiet("No review yet", null, "npm run review:changes:save -- <path>"));
+      app.replaceChildren(...chrome, quiet("No review yet", "Use the form above, or:", "npm run review:codebase:save -- <path> --pack core --limit 2"));
       break;
     case "error":
-      app.replaceChildren(quiet("Unreadable report", `${state.message} · ${state.source}`));
+      app.replaceChildren(...chrome, quiet("Unreadable report", `${state.message} · ${state.source}`));
       break;
     default:
-      app.replaceChildren(quiet("Server unavailable", null, "npm run dashboard"));
+      app.replaceChildren(...chrome, quiet("Server unavailable", null, "npm run dashboard"));
   }
+}
+
+function schedulePoll() {
+  clearTimeout(pollTimer);
+  if (history.active || writeBusy) pollTimer = setTimeout(load, 1200);
 }
 
 async function load() {
   let state;
+  const reviewUrl = viewingRunId ? "/api/review?runId=" + encodeURIComponent(viewingRunId) : "/api/review";
   try {
-    const res = await fetch("/api/review", { cache: "no-store" });
+    const res = await fetch(reviewUrl, { cache: "no-store" });
     state = res.ok ? await res.json() : { status: "offline" };
+    if (res.status === 404 && viewingRunId) {
+      viewingRunId = "";
+      return load();
+    }
   } catch {
     state = { status: "offline" };
   }
   try {
-    const [writeRes, writerRes] = await Promise.all([
-      fetch("/api/writeups", { cache: "no-store" }),
+    const [writeRes, writerRes, runsRes] = await Promise.all([
+      fetch("/api/writeups" + (viewingRunId ? "?runId=" + encodeURIComponent(viewingRunId) : ""), { cache: "no-store" }),
       fetch("/api/writer", { cache: "no-store" }),
+      fetch("/api/runs", { cache: "no-store" }),
     ]);
     if (writeRes.ok) {
       const body = await writeRes.json();
       if (Array.isArray(body.writeups)) writeups = body.writeups;
     }
     if (writerRes.ok) writer = await writerRes.json();
+    if (runsRes.ok) history = { ...history, ...(await runsRes.json()) };
+    const newest = history.runs?.[0];
+    if (!launchError && !history.active && newest?.status === "error" && newest.error) {
+      launchError = newest.error;
+    }
   } catch {
     // Keep last write-ups if the extra endpoints are down.
   }
-  const key = JSON.stringify({ state, writeups, writer, writeBusy, writeError });
-  if (key === lastKey) return renderMeta(state);
+  if (Array.isArray(state.writeups)) writeups = state.writeups;
+  if (state.writeError && !writeError) writeError = state.writeError;
+  const key = JSON.stringify({
+    state,
+    writeups,
+    writer,
+    writeBusy,
+    writeError,
+    launchError,
+    viewingRunId,
+    history,
+  });
+  if (key === lastKey) {
+    renderMeta(state);
+    refreshLaunch();
+    schedulePoll();
+    return;
+  }
   lastKey = key;
   render(state);
+  schedulePoll();
 }
 
 document.addEventListener("visibilitychange", () => {

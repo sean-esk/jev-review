@@ -17,7 +17,7 @@
     "dashboard": "node --experimental-strip-types --env-file=.env src/dashboard/server.ts",
     "typecheck": "tsc --noEmit",
     "check:deps": "node --experimental-strip-types scripts/check-dependencies.ts",
-    "check": "npm run typecheck && npm run check:deps && node --check src/dashboard/public/app.js"
+    "check": "npm run typecheck && npm run check:deps && node --experimental-strip-types scripts/check-run-store.ts && node --check src/dashboard/public/app.js"
   },
   "dependencies": {
     "@typesafe-ai/sdk": "^0.6.0"

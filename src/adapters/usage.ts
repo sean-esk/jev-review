@@ -1,5 +1,6 @@
 // Records per-request Jev usage. Prefers API token counts; falls back to
 // serialized state size when the response omits usage.
+import { estimateJevUsd, formatUsd } from "../domain/cost.ts";
 import type { UsageEvent, UsageSummary } from "../domain/types.ts";
 
 export type UsageTracker = {
@@ -120,7 +121,9 @@ export function formatUsage(summary: UsageSummary): string {
   const tokens = summary.tokensObserved
     ? `${summary.inputTokens ?? "?"} in + ${summary.outputTokens ?? "?"} out tokens`
     : `${summary.inputChars} input chars, tokens not reported`;
-  return `Jev usage: ${summary.requests} requests, ${tokens}, ${(summary.durationMs / 1000).toFixed(1)}s`;
+  const cost = estimateJevUsd(summary);
+  const priced = cost != null ? `, ~${formatUsd(cost)}` : "";
+  return `Jev usage: ${summary.requests} requests, ${tokens}, ${(summary.durationMs / 1000).toFixed(1)}s${priced}`;
 }
 
 function formatEvent(event: UsageEvent): string {
