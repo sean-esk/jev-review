@@ -608,6 +608,102 @@ table {
   background: var(--critical);
 }
 
+.write-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+  margin: 0 0 18px;
+}
+
+.write-btn {
+  padding: 6px 12px;
+  border: 1px solid var(--ink-2);
+  border-radius: 4px;
+  background: var(--ink);
+  color: var(--page);
+  font: 500 12px var(--sans);
+  cursor: pointer;
+}
+
+.write-btn:hover {
+  background: var(--ink-2);
+}
+
+.write-btn:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+
+.write-meta {
+  color: var(--muted);
+  font: 12px var(--mono);
+}
+
+.write-error {
+  color: var(--critical);
+  font-size: 12px;
+}
+
+.writeups {
+  display: grid;
+  gap: 16px;
+  margin-top: 24px;
+}
+
+.writeup {
+  padding: 14px 16px 16px;
+  border: 1px solid var(--hair);
+  border-radius: 6px;
+  background: var(--surface);
+}
+
+.writeup.discarded {
+  opacity: 0.82;
+}
+
+.writeup-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px 12px;
+  margin-bottom: 8px;
+}
+
+.writeup-head code {
+  font: 12px var(--mono);
+}
+
+.writeup-dim,
+.writeup-flag {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.writeup-claim {
+  margin: 0 0 8px;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.writeup-quote {
+  margin: 0 0 8px;
+  padding: 8px 10px;
+  overflow-x: auto;
+  border-left: 2px solid var(--rule);
+  background: var(--page);
+  color: var(--ink-2);
+  font: 12px/1.45 var(--mono);
+  white-space: pre-wrap;
+}
+
+.writeup-change,
+.writeup-reason {
+  margin: 0;
+  color: var(--ink-2);
+  font-size: 13px;
+}
+
 /* empty states */
 
 .quiet {

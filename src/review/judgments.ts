@@ -8,6 +8,7 @@ import {
   severityRubric,
 } from "../domain/config.ts";
 import { reviewAction } from "../domain/finding-rules.ts";
+import { evidenceFromContent } from "../domain/writeup.ts";
 import { parseHunks } from "../domain/patch.ts";
 import type { ReviewPolicy } from "../domain/policy.ts";
 import type { ChangedFile, FileProfile, Finding, Screening, Signal } from "../domain/types.ts";
@@ -168,5 +169,6 @@ export async function locateSignal(
     owner,
     ownerConfidence,
     action: reviewAction(signal.dimension, severity.score, policy.context),
+    evidence: evidenceFromContent(hunk.startLine, hunk.patch),
   };
 }

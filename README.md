@@ -43,7 +43,7 @@ npm run review:codebase:save -- /path/to/LM-Apps-Monorepo/packages/auth/src --pa
 npm run dashboard
 ```
 
-Open [http://127.0.0.1:4317](http://127.0.0.1:4317).
+Open [http://127.0.0.1:4317](http://127.0.0.1:4317). Jev only scores. **Write reviews** sends each finding plus its source region to a local OpenAI-compatible model (`WRITE_BASE_URL`, default `http://127.0.0.1:11434/v1` for Ollama). Write-ups land in `reviews/writeups.json`.
 
 ## Commands
 
@@ -67,6 +67,8 @@ src/
   domain/      config.ts, types.ts, patch.ts   shared policy, report shapes, diff parsing
   adapters/    git.ts, repository-files.ts     change and complete-source discovery
                report-store.ts                 atomic report save/load
+               writeup-store.ts, openai-writer.ts
+                                               local OpenAI-compatible write-ups
   review/      changes.ts, codebase.ts          mode-specific workflows
                *-judgments.ts, workflow.ts     Jev calls and shared staged orchestration
   cli/         review-*.ts, save-*.ts           explicit mode entry points

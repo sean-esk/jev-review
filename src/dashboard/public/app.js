@@ -22,6 +22,19 @@ const meta = document.getElementById("meta");
 let showValues = false;
 let lastState = null;
 let lastKey = "";
+let writeups = [];
+let writer = { baseUrl: "", model: "", hasKey: false };
+let writeBusy = false;
+let writeError = "";
+
+function findingKey(finding) {
+  return [finding.file, finding.line, finding.dimension, finding.mechanism].join("\t");
+}
+
+function writeupFor(finding) {
+  const key = findingKey(finding);
+  return writeups.find((entry) => entry.key === key) ?? null;
+}
 
 // All untrusted text goes through text nodes, never innerHTML.
 function h(tag, props = {}, ...children) {
@@ -407,11 +420,68 @@ function usage(report) {
   );
 }
 
+function writerHost() {
+  try {
+    return new URL(writer.baseUrl).host;
+  } catch {
+    return writer.baseUrl || "not configured";
+  }
+}
+
+async function writeReviews() {
+  if (writeBusy || !lastState?.report?.findings?.length) return;
+  writeBusy = true;
+  writeError = "";
+  render(lastState);
+  try {
+    const res = await fetch("/api/writeups", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{}",
+    });
+    const body = await res.json().catch(() => ({}));
+    if (Array.isArray(body.writeups)) writeups = body.writeups;
+    if (!res.ok) writeError = body.error || "Write-up failed";
+  } catch {
+    writeError = "Dashboard could not reach the writer";
+  } finally {
+    writeBusy = false;
+    render(lastState);
+  }
+}
+
+function writeupCard(finding, labels) {
+  const writeup = writeupFor(finding);
+  if (!writeup) return null;
+  const [dir, base] = splitPath(finding.file);
+  return h(
+    "article",
+    { class: `writeup${writeup.discard ? " discarded" : ""}` },
+    h(
+      "header",
+      { class: "writeup-head" },
+      h(
+        "code",
+        {},
+        h("span", { class: "dir" }, dir),
+        h("span", { class: "base" }, base),
+        h("span", { class: "line" }, ":" + (finding.line ?? "?")),
+      ),
+      h("span", { class: "writeup-dim" }, (labels[finding.dimension] ?? finding.dimension) + " · " + finding.mechanism),
+      writeup.discard && h("span", { class: "writeup-flag" }, "Not a defect"),
+    ),
+    h("p", { class: "writeup-claim" }, writeup.claim),
+    writeup.quote && h("pre", { class: "writeup-quote" }, writeup.quote),
+    writeup.change && h("p", { class: "writeup-change" }, writeup.change),
+    writeup.discard && writeup.reason && h("p", { class: "writeup-reason" }, writeup.reason),
+  );
+}
+
 function findings(report) {
   const list = report.findings;
   const labels = Object.fromEntries(dimensionsFor(report).map(([key, label]) => [key, label]));
   const count = h("span", { class: "count" }, list.length);
-  const findingsNote = "These concerns passed screening and were tied to a concrete source region and mechanism. Severity runs from 0 (no meaningful impact) to 3 (critical). Findings are review leads, not proof of a defect.";
+  const findingsNote = "These concerns passed screening and were tied to a concrete source region and mechanism. Severity runs from 0 (no meaningful impact) to 3 (critical). Findings are review leads, not proof of a defect. Write reviews sends each finding plus its source region to a local OpenAI-compatible model.";
 
   if (list.length === 0) {
     const followed = report.followedSignals;
@@ -480,11 +550,30 @@ function findings(report) {
     ),
   );
 
+  const written = list.map((finding) => writeupCard(finding, labels)).filter(Boolean);
+
   return section(
     "Findings",
     count,
     h("p", { class: "section-note" }, findingsNote),
+    h(
+      "div",
+      { class: "write-bar" },
+      h(
+        "button",
+        {
+          class: "write-btn",
+          type: "button",
+          disabled: writeBusy,
+          onclick: writeReviews,
+        },
+        writeBusy ? "Writing reviews…" : "Write reviews",
+      ),
+      h("span", { class: "write-meta" }, writer.model ? writer.model + " at " + writerHost() : "Set WRITE_BASE_URL and WRITE_MODEL"),
+      writeError && h("span", { class: "write-error" }, writeError),
+    ),
     table,
+    written.length > 0 && h("div", { class: "writeups" }, written),
   );
 }
 
@@ -544,7 +633,20 @@ async function load() {
   } catch {
     state = { status: "offline" };
   }
-  const key = JSON.stringify(state);
+  try {
+    const [writeRes, writerRes] = await Promise.all([
+      fetch("/api/writeups", { cache: "no-store" }),
+      fetch("/api/writer", { cache: "no-store" }),
+    ]);
+    if (writeRes.ok) {
+      const body = await writeRes.json();
+      if (Array.isArray(body.writeups)) writeups = body.writeups;
+    }
+    if (writerRes.ok) writer = await writerRes.json();
+  } catch {
+    // Keep last write-ups if the extra endpoints are down.
+  }
+  const key = JSON.stringify({ state, writeups, writer, writeBusy, writeError });
   if (key === lastKey) return renderMeta(state);
   lastKey = key;
   render(state);

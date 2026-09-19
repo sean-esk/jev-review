@@ -31,6 +31,12 @@ export type Signal<File extends { path: string }> = {
   probability: number;
 };
 
+export type Evidence = {
+  startLine: number;
+  endLine: number;
+  content: string;
+};
+
 export type Finding<File extends { path: string }> = Signal<File> & {
   line: number;
   locationConfidence: number;
@@ -41,6 +47,23 @@ export type Finding<File extends { path: string }> = Signal<File> & {
   owner: string | null;
   ownerConfidence: number | null;
   action: "comment" | "request_changes";
+  evidence?: Evidence;
+};
+
+export type Writeup = {
+  key: string;
+  file: string;
+  line: number;
+  dimension: string;
+  mechanism: string;
+  claim: string;
+  quote: string;
+  change: string;
+  discard: boolean;
+  reason: string;
+  model: string;
+  writtenAt: string;
+  durationMs: number;
 };
 
 export type FileProfile = {

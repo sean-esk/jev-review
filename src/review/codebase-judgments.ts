@@ -11,6 +11,7 @@ import {
 } from "../domain/config.ts";
 import { remapCorrectnessMechanism, reviewAction } from "../domain/finding-rules.ts";
 import type { ReviewPolicy } from "../domain/policy.ts";
+import { evidenceFromContent } from "../domain/writeup.ts";
 import type { FileProfile, Finding, Screening, Signal, SourceFile } from "../domain/types.ts";
 import { maxNoulMap, noulMap, screenQuestions } from "./questions.ts";
 
@@ -203,6 +204,7 @@ export async function locateSourceSignal(
     owner,
     ownerConfidence,
     action: reviewAction(signal.dimension, severity.score, policy.context),
+    evidence: evidenceFromContent(region.startLine, region.content),
   };
 }
 

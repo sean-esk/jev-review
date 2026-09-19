@@ -14,7 +14,7 @@
     "review:changes:save": "node --experimental-strip-types --env-file=.env src/cli/save-changes.ts",
     "review:codebase": "node --experimental-strip-types --env-file=.env src/cli/review-codebase.ts",
     "review:codebase:save": "node --experimental-strip-types --env-file=.env src/cli/save-codebase.ts",
-    "dashboard": "node --experimental-strip-types src/dashboard/server.ts",
+    "dashboard": "node --experimental-strip-types --env-file=.env src/dashboard/server.ts",
     "typecheck": "tsc --noEmit",
     "check:deps": "node --experimental-strip-types scripts/check-dependencies.ts",
     "check": "npm run typecheck && npm run check:deps && node --check src/dashboard/public/app.js"
