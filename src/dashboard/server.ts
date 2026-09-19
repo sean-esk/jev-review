@@ -49,7 +49,11 @@ export async function handle(req: IncomingMessage, res: ServerResponse) {
   send(res, 200, type, await readFile(join(PUBLIC_DIR, file)));
 }
 
-if (import.meta.main) {
+const startedDirectly =
+  import.meta.main === true ||
+  (typeof process.argv[1] === "string" && /(?:^|[\\/])server\.ts$/.test(process.argv[1]));
+
+if (startedDirectly) {
   createServer(handle).listen(PORT, HOST, () => {
     console.log(`Jev review dashboard: http://${HOST}:${PORT}`);
     console.log(`report: ${relative(process.cwd(), REPORT) || REPORT}`);
