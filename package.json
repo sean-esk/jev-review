@@ -10,13 +10,13 @@
   },
   "type": "module",
   "scripts": {
-    "review:changes": "node --env-file=.env src/cli/review-changes.ts",
-    "review:changes:save": "node --env-file=.env src/cli/save-changes.ts",
-    "review:codebase": "node --env-file=.env src/cli/review-codebase.ts",
-    "review:codebase:save": "node --env-file=.env src/cli/save-codebase.ts",
-    "dashboard": "node src/dashboard/server.ts",
+    "review:changes": "node --experimental-strip-types --env-file=.env src/cli/review-changes.ts",
+    "review:changes:save": "node --experimental-strip-types --env-file=.env src/cli/save-changes.ts",
+    "review:codebase": "node --experimental-strip-types --env-file=.env src/cli/review-codebase.ts",
+    "review:codebase:save": "node --experimental-strip-types --env-file=.env src/cli/save-codebase.ts",
+    "dashboard": "node --experimental-strip-types src/dashboard/server.ts",
     "typecheck": "tsc --noEmit",
-    "check:deps": "node scripts/check-dependencies.ts",
+    "check:deps": "node --experimental-strip-types scripts/check-dependencies.ts",
     "check": "npm run typecheck && npm run check:deps && node --check src/dashboard/public/app.js"
   },
   "dependencies": {
